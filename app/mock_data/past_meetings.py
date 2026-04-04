@@ -1,0 +1,58 @@
+PAST_MEETINGS = [
+    {
+        "call_id": "hist-001",
+        "summary": "Discovery call with a 300-person healthcare provider in Melbourne. Prospect needed to automate patient intake and reporting. Demonstrated ROI by showing time savings across multiple clinics. Closed at 180K AUD.",
+        "outcome": "closed_won",
+        "key_technique": "quantify time savings per clinic then multiply across locations",
+        "keywords": ["healthcare", "patient", "intake", "reporting", "automation", "clinics", "manual", "data", "staff", "time"],
+    },
+    {
+        "call_id": "hist-002",
+        "summary": "Call with a mid-size fintech firm struggling with compliance reporting. Their team spent weeks on quarterly reports. Proposed modular approach starting with data consolidation. Won on price flexibility.",
+        "outcome": "closed_won",
+        "key_technique": "offer modular pricing to lower entry barrier",
+        "keywords": ["fintech", "compliance", "reporting", "regulatory", "quarterly", "consolidation", "cost", "price", "modular", "APRA"],
+    },
+    {
+        "call_id": "hist-003",
+        "summary": "Discovery with an agriculture company about supply chain optimization. Prospect was hesitant and lacked budget approval. Offered a pilot program but prospect went cold after two follow-ups.",
+        "outcome": "closed_lost",
+        "key_technique": "propose low-risk pilot to build confidence",
+        "keywords": ["agriculture", "supply", "chain", "forecasting", "budget", "skeptical", "pilot", "unsure", "expensive", "spreadsheet"],
+    },
+    {
+        "call_id": "hist-004",
+        "summary": "Successful engagement with an education platform to automate curriculum mapping and student outcome tracking. Champion was the Head of Curriculum Technology. Deal closed in 6 weeks.",
+        "outcome": "closed_won",
+        "key_technique": "align with internal champion who feels daily pain",
+        "keywords": ["education", "curriculum", "student", "tracking", "automation", "technology", "operations", "staff", "time"],
+    },
+    {
+        "call_id": "hist-005",
+        "summary": "Initial call with a professional services firm about document automation. They were comparing us against three other vendors. Lost on timeline - they needed implementation in 4 weeks which we couldn't meet.",
+        "outcome": "closed_lost",
+        "key_technique": "set realistic timeline expectations early",
+        "keywords": ["professional", "services", "document", "automation", "timeline", "competitor", "vendor", "implementation", "fast"],
+    },
+    {
+        "call_id": "hist-006",
+        "summary": "Large SaaS company wanted to automate their customer onboarding pipeline. Multiple stakeholders including CTO, VP Product, and Head of CS. Used technical deep-dive to win over CTO.",
+        "outcome": "closed_won",
+        "key_technique": "schedule technical deep-dive with CTO to build trust",
+        "keywords": ["saas", "onboarding", "pipeline", "CTO", "technical", "integration", "systems", "engineering", "product"],
+    },
+    {
+        "call_id": "hist-007",
+        "summary": "InsureTech prospect exploring claims processing automation. Great initial interest but deal stalled during negotiation when CFO pushed back on price. Eventually closed after sharing ROI case study.",
+        "outcome": "closed_won",
+        "key_technique": "use ROI case study from same industry to overcome CFO objections",
+        "keywords": ["insurance", "claims", "processing", "automation", "CFO", "price", "cost", "budget", "ROI", "case", "study"],
+    },
+    {
+        "call_id": "hist-008",
+        "summary": "Small fintech startup wanted enterprise-grade AI but had limited budget. Offered scaled-down package but they chose a cheaper alternative. Lesson: qualify budget early.",
+        "outcome": "closed_lost",
+        "key_technique": "qualify budget constraints in first 10 minutes",
+        "keywords": ["fintech", "startup", "budget", "limited", "cheap", "alternative", "price", "expensive", "cost", "small"],
+    },
+]
