@@ -1,14 +1,14 @@
 from fastapi import FastAPI
 
-from app.routers import discovery, mirofish, openclaw
+from app.routers import discovery, leads, mirofish
 
 app = FastAPI(
     title="SimplAI AU - Sales Pipeline Demo",
-    description="OpenClaw + MiroFish sales pipeline demonstration. All data is mock.",
-    version="0.1.0",
+    description="LangGraph ReAct agent + MiroFish sales pipeline demonstration.",
+    version="0.2.0",
 )
 
-app.include_router(openclaw.router, prefix="/api/openclaw", tags=["OpenClaw - Lead Gathering"])
+app.include_router(leads.router, prefix="/api/leads", tags=["Lead Agent (LangGraph)"])
 app.include_router(discovery.router, prefix="/api/discovery", tags=["Discovery Call Assistant"])
 app.include_router(mirofish.router, prefix="/api/mirofish", tags=["MiroFish - Training Scenarios"])
 
@@ -17,9 +17,9 @@ app.include_router(mirofish.router, prefix="/api/mirofish", tags=["MiroFish - Tr
 async def root():
     return {
         "service": "SimplAI AU Sales Pipeline Demo",
-        "version": "0.1.0",
+        "version": "0.2.0",
         "pipelines": {
-            "openclaw": "/api/openclaw/run - Multi-agent lead gathering",
+            "leads": "/api/leads/run - LangGraph ReAct agent lead gathering",
             "discovery": "/api/discovery/analyze/{call_id} - Call analysis + RAG",
             "mirofish": "/api/mirofish/generate - Training scenario generation",
         },
@@ -31,10 +31,12 @@ async def root():
 async def pipeline_overview():
     return {
         "stage_1_lead_generation": {
-            "name": "OpenClaw",
-            "description": "Parallel multi-agent lead search across Apollo, LinkedIn, Web, Referrals",
+            "name": "Lead Agent (LangGraph)",
+            "description": "ReAct agent backed by Claude that reasons about which lead sources to query based on natural language prompts",
             "flow": [
-                "agents_search_parallel",
+                "natural_language_prompt",
+                "react_reasoning",
+                "tool_calls (apollo, linkedin, web, referrals)",
                 "deterministic_evaluation",
                 "qualified_leads_output",
             ],

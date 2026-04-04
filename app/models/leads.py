@@ -1,6 +1,5 @@
 from pydantic import BaseModel
 from enum import Enum
-from datetime import datetime
 
 
 class LeadSource(str, Enum):
@@ -24,14 +23,6 @@ class Lead(BaseModel):
     rejection_reason: str | None = None
 
 
-class AgentResult(BaseModel):
-    agent_id: str
-    source: LeadSource
-    leads_found: list[Lead]
-    search_duration_ms: int
-    timestamp: datetime
-
-
 class EvaluationResult(BaseModel):
     total_gathered: int
     passed_filter: int
@@ -40,13 +31,20 @@ class EvaluationResult(BaseModel):
     qualified_leads: list[Lead]
 
 
-class OpenClawPipelineResponse(BaseModel):
+class ToolCallRecord(BaseModel):
+    tool_name: str
+    arguments: dict
+
+
+class LeadAgentPipelineResponse(BaseModel):
     run_id: str
-    agent_results: list[AgentResult]
+    prompt: str
+    tool_calls: list[ToolCallRecord]
+    agent_summary: str
     evaluation: EvaluationResult
     total_duration_ms: int
 
 
-class OpenClawRunRequest(BaseModel):
-    industry_filter: str | None = None
+class LeadRunRequest(BaseModel):
+    prompt: str = "Find leads across all available sources"
     min_company_size: int = 50
