@@ -1,3 +1,4 @@
+from tokenize import String
 from typing import Annotated
 
 from langchain_core.messages import AnyMessage, HumanMessage
@@ -27,7 +28,7 @@ def llm_chatbot(state: State):
     return {"messages": [llm_with_tool.invoke(state["messages"])]}
 
 @tool  # get the agents to query the DB for history of similar calls (stored as trasncripts)
-def call_vector_DB():
+def call_vector_DB(qurey:str) -> String:
     pass
 
 def build_graph():
