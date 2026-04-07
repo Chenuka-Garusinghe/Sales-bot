@@ -1,106 +1,138 @@
-from random import random
-from tokenize import String
-from typing import Annotated
+from collections.abc import Hashable
+from typing import Annotated, NotRequired
 import os
 
-from langchain_core.messages import AnyMessage, HumanMessage
+from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, SystemMessage
 from langchain_core.tools.convert import tool
 from langchain_ollama import ChatOllama
-from langchain_tavily import TavilySearch
 from langgraph.graph import START, StateGraph, END
 from langgraph.graph.message import add_messages
-from langgraph.prebuilt import ToolNode, tools_condition
-from pinecone import Pinecone
+from langgraph.prebuilt import ToolNode
+from pinecone import Pinecone, SearchQuery
 from typing_extensions import TypedDict
 
-SYSTEM_CONDITIONS = """
-If you the agent are satisfied with the outcome of the discussion so far about the sentiment of the
-users input (a transcription of the call he had) appened to the string: APPROVED else append: DISAPPROVE"""
+AGENT_PERSONAS = {
+    "customer-advocate": """You are a Customer Advocate analyst. Your role is to evaluate sales conversations
+from the CUSTOMER's perspective. Focus on: how well the customer's needs were understood, whether they
+felt heard, pain points that were addressed or missed, and overall customer satisfaction signals.
+You can query past sales conversations for comparison using the call_vector_DB tool.
+When you are satisfied with the group's analysis, include APPROVED at the end of your message.
+Otherwise include DISAPPROVED.""",
+
+    "deal-strategist": """You are a Deal Strategist analyst. Your role is to evaluate sales conversations
+from a CLOSING/STRATEGY perspective. Focus on: deal progression signals, objection handling effectiveness,
+pricing discussion tactics, competitive positioning, and likelihood of conversion.
+You can query past sales conversations for comparison using the call_vector_DB tool.
+When you are satisfied with the group's analysis, include APPROVED at the end of your message.
+Otherwise include DISAPPROVED.""",
+
+    "communications-coach": """You are a Communications Coach analyst. Your role is to evaluate sales conversations
+from a COMMUNICATION QUALITY perspective. Focus on: tone, rapport building, active listening cues,
+clarity of value proposition delivery, and areas where phrasing could improve.
+You can query past sales conversations for comparison using the call_vector_DB tool.
+When you are satisfied with the group's analysis, include APPROVED at the end of your message.
+Otherwise include DISAPPROVED.""",
+}
+
+AGENTS = list(AGENT_PERSONAS.keys())
 
 
 class State(TypedDict):
     messages: Annotated[
         list[AnyMessage], add_messages
     ]  # add_messages makes sure the State is append-only
+    current_agent: NotRequired[str]  # tracks which agent is currently speaking
 
 
-@tool  # get the agents to query the pinconeDB for history of similar calls (stored as trasncripts)
-def call_vector_DB(query: str) -> String:
-    pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
+@tool
+def call_vector_DB(query: str) -> str:
+    """Query the Pinecone vector DB for past sales call transcripts similar to the given query."""
+    api_key = os.getenv("PINECONE_API_KEY")
+    if not api_key:
+        return "Error: PINECONE_API_KEY environment variable not set"
+    pc = Pinecone(api_key=api_key)
     index = pc.Index(host="sales-bot-db-demo")
-    
+
     filtered_results = index.search(
-        namespace="salestalk", 
-        query={
-            "inputs": {"text": query}, 
-            "top_k": 3,
-        },
-        fields=["chunk_text"]
+        namespace="salestalk",
+        query=SearchQuery(
+            inputs={"text": query},
+            top_k=3,
+        ),
+        fields=["chunk_text"],
     )
-    return filtered_results
-
-
-def llm_chatbot(state: State):
-    # Invoke the LLM with the current message history
-    return {"messages": [llm_with_tool.invoke(state["messages"])]}
-
-
-# getting the agents to talk to each other through `router`
-# due to non-determinstic nature, router will have a exit after some itterations
-def router(state: State):
-    messages = state["messages"]
-    prev_message = messages[-1].content
-
-    if "APPROVED" in prev_message:
-        return "FINISHED"
-    if len(messages) > 15:
-        return "FINISHED"
-    return "drafter"
+    return str(filtered_results)
 
 
 tools_list = [call_vector_DB]
-llm_with_tool = ChatOllama(model="llama3.1").bind_tools(tools_list)
+llm = ChatOllama(model="llama3.1")
+llm_with_tools = llm.bind_tools(tools_list)
 tool_node = ToolNode(tools_list)
+
+
+def make_agent_node(agent_name: str):
+    """Create a node function for a specific agent persona."""
+    system_prompt = AGENT_PERSONAS[agent_name]
+
+    def agent_node(state: State):
+        # Prepend the system message for this agent's persona
+        messages = [SystemMessage(content=system_prompt)] + state["messages"]
+        response = llm_with_tools.invoke(messages)
+        return {"messages": [response], "current_agent": agent_name}
+
+    return agent_node
+
+
+def route_after_agent(state: State):
+    """Combined router: checks for tool calls first, then discussion flow."""
+    last_message = state["messages"][-1]
+
+    # If the LLM wants to call a tool, route to tools node
+    if isinstance(last_message, AIMessage) and last_message.tool_calls:
+        return "tools"
+
+    # If APPROVED, we're done
+    content = last_message.content if isinstance(last_message.content, str) else ""
+    if "APPROVED" in content:
+        return END
+
+    # Safety limit on conversation length
+    if len(state["messages"]) > 15:
+        return END
+
+    # Route to the next agent (round-robin, skipping self)
+    current: str = state.get("current_agent") or AGENTS[0]
+    current_idx = AGENTS.index(current)
+    next_idx = (current_idx + 1) % len(AGENTS)
+    return AGENTS[next_idx]
+
+
+def route_after_tools(state: State):
+    """After a tool executes, return to the agent that called it."""
+    return state.get("current_agent", AGENTS[0])
 
 
 def build_graph():
     build = StateGraph(State)
-    agents = [
-        "LLM-1-Customer-advocate",
-        "LLM-2-Deal-strategist",
-        "LLM-3-Communications-coach",
-    ]
-    for agent in agents:
-        build.add_node(agent, llm_chatbot)
-    build.add_node("tools", tool_node)  # Node to execute tools
 
-    build.add_edge(
-        START, random.choice(agents)
-    )  # Start by sending user input to the LLM
+    # Add a node per agent with its own persona
+    for agent in AGENTS:
+        build.add_node(agent, make_agent_node(agent))
+    build.add_node("tools", tool_node)
 
-    for agent in agents:
-        build.add_edge("tools", agent)
+    # Start with the first agent
+    build.add_edge(START, AGENTS[0])
 
-    for agent in agents:
-        random_agent = random.choice(agents)
-        build.add_conditional_edges(
-            agent,
-            tools_condition,  # This is a pre-built LangGraph condition: if last message has tool calls, it routes to "tools"
-            # The default mapping for tools_condition is {"tools": "tools_node_name"}
-        )
-        build.add_conditional_edges(
-            agent,
-            router,
-            {
-                agent: random_agent if agent != random_agent else "" # talking agents with each other but not self,
-                "FINISHED": END
-            })
+    # After each agent: either call tools, route to next agent, or end
+    route_map: dict[Hashable, str] = {a: a for a in AGENTS}
+    route_map["tools"] = "tools"
+    route_map[END] = END
+    for agent in AGENTS:
+        build.add_conditional_edges(agent, route_after_agent, route_map)
 
-    # connect agents with each other
-    for i in range(0, len(agents)):
-        for j in range(i + 1, len(agents)):
-            build.add_edge(agents[i], agents[j])
-
+    # After tools execute, return to whichever agent invoked them
+    tools_map: dict[Hashable, str] = {a: a for a in AGENTS}
+    build.add_conditional_edges("tools", route_after_tools, tools_map)
 
     return build.compile()
 
@@ -108,14 +140,22 @@ def build_graph():
 def main():
     app = build_graph()
 
+    print("Sales Conversation Sentiment Analyzer")
+    print("Paste a sales call transcription and 3 AI agents will analyze it.")
+    print("Type 'quit' or 'exit' to stop.\n")
+
     while True:
-        user_input = input("You: " + SYSTEM_CONDITIONS)
+        user_input = input("You: ")
         if user_input.lower() in ("quit", "exit"):
             print("Goodbye!")
             break
 
         result = app.invoke({"messages": [HumanMessage(content=user_input)]})
-        print("Bot:", result["messages"][-1].content)
+        # Print the final analysis
+        final_content = result["messages"][-1].content
+        print("\n--- Final Analysis ---")
+        print(final_content if isinstance(final_content, str) else str(final_content))
+        print("---\n")
 
 
 main()
