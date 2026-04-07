@@ -1,87 +1,66 @@
-"""
-SimplAI AU Sales Pipeline Demo -- FastAPI Application
+from typing import Annotated
 
-This is the entry point. It registers three routers (one per pipeline stage)
-and exposes two top-level endpoints for health check and pipeline overview.
+from langchain_core.messages import AnyMessage, HumanMessage
+from langchain_core.tools.convert import tool
+from langchain_ollama import ChatOllama
+from langchain_tavily import TavilySearch
+from langgraph.graph import START, StateGraph
+from langgraph.graph.message import add_messages
+from langgraph.prebuilt import ToolNode, tools_condition
+from typing_extensions import TypedDict
 
-Pipeline stages:
-    Stage 1: /api/leads/*     -- LangGraph ReAct agent for lead gathering
-    Stage 2: /api/discovery/* -- Discovery call analysis with mock RAG
-    Stage 3: /api/mirofish/*  -- MiroFish training scenario generation
+tavily_tool = TavilySearch(max_results=3)
 
-To run:
-    source .venv/bin/activate
-    uvicorn main:app --reload
-
-Then open http://localhost:8000/docs for Swagger UI.
-"""
-
-from fastapi import FastAPI
-
-from app.routers import discovery, leads, mirofish
-
-# Create the FastAPI app -- title and description show up in Swagger UI at /docs
-app = FastAPI(
-    title="SimplAI AU - Sales Pipeline Demo",
-    description="LangGraph ReAct agent + MiroFish sales pipeline demonstration.",
-    version="0.2.0",
-)
-
-# Register each stage's router with its URL prefix and Swagger tag
-app.include_router(leads.router, prefix="/api/leads", tags=["Lead Agent (LangGraph)"])
-app.include_router(discovery.router, prefix="/api/discovery", tags=["Discovery Call Assistant"])
-app.include_router(mirofish.router, prefix="/api/mirofish", tags=["MiroFish - Training Scenarios"])
+tools_list = [tavily_tool]
+llm_with_tool = ChatOllama(model="llama3.1").bind_tools(tools_list)
+tool_node = ToolNode(tools_list)
 
 
-@app.get("/")
-async def root():
-    """Health check and API overview. Hit this to verify the server is running."""
-    return {
-        "service": "SimplAI AU Sales Pipeline Demo",
-        "version": "0.2.0",
-        "pipelines": {
-            "leads": "/api/leads/run - LangGraph ReAct agent lead gathering",
-            "discovery": "/api/discovery/analyze/{call_id} - Call analysis + RAG",
-            "mirofish": "/api/mirofish/generate - Training scenario generation",
-        },
-        "docs": "/docs",
-    }
+class State(TypedDict):
+    messages: Annotated[
+        list[AnyMessage], add_messages
+    ]  # add_messages makes sure the State is append-only
 
 
-@app.get("/api/pipeline/overview")
-async def pipeline_overview():
-    """Returns a JSON description of the full pipeline flow.
-    Useful for demo narration or building a frontend visualization.
-    """
-    return {
-        "stage_1_lead_generation": {
-            "name": "Lead Agent (LangGraph)",
-            "description": "ReAct agent backed by Ollama/llama3.1 that reasons about which lead sources to query based on natural language prompts",
-            "flow": [
-                "natural_language_prompt",
-                "react_reasoning",
-                "tool_calls (apollo, linkedin, web, referrals)",
-                "deterministic_evaluation",
-                "qualified_leads_output",
-            ],
-        },
-        "stage_2_discovery": {
-            "name": "Discovery Call Assistant",
-            "description": "Voice-to-text transcription with RAG-powered insights",
-            "flow": [
-                "transcript_ingestion",
-                "rag_retrieval",
-                "pattern_matching",
-                "insight_generation",
-            ],
-        },
-        "stage_3_training": {
-            "name": "MiroFish",
-            "description": "Simulated sales scenarios for rep training",
-            "flow": [
-                "persona_selection",
-                "scenario_generation",
-                "practice_interaction",
-            ],
-        },
-    }
+def llm_chatbot(state: State):
+    # Invoke the LLM with the current message history
+    return {"messages": [llm_with_tool.invoke(state["messages"])]}
+
+@tool  # get the agents to query the DB for history of similar calls (stored as trasncripts)
+def call_vector_DB():
+    pass
+
+def build_graph():
+    build = StateGraph(State)
+    build.add_node("LLM", llm_chatbot)
+    build.add_node("tools", tool_node)  # Node to execute tools
+
+    build.add_edge(START, "LLM")  # Start by sending user input to the LLM
+
+    build.add_conditional_edges(
+        "LLM",
+        tools_condition,  # This is a pre-built LangGraph condition: if last message has tool calls, it routes to "tools"
+        # The default mapping for tools_condition is {"tools": "tools_node_name"}
+    )
+
+    build.add_edge(
+        "tools", "LLM"
+    )  # After tools run, send results back to the LLM for next turn
+
+    return build.compile()
+
+
+def main():
+    app = build_graph()
+
+    while True:
+        user_input = input("You: ")
+        if user_input.lower() in ("quit", "exit"):
+            print("Goodbye!")
+            break
+
+        result = app.invoke({"messages": [HumanMessage(content=user_input)]})
+        print("Bot:", result["messages"][-1].content)
+
+
+main()
